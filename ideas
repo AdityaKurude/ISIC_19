@@ -1,0 +1,1 @@
+Choose a base model (maybe the best performing one on the validation dataset) then for the second model, choose the one that correlates with it the least. After that, the one that correlates with the first two the least and so on.
