@@ -2,14 +2,16 @@ from keras.applications.xception import Xception
 from keras.layers.core import Dense
 from keras.models import Model
 from keras_preprocessing.image import ImageDataGenerator
-from keras.layers import Flatten
+from keras.callbacks import ModelCheckpoint
 from keras.layers import Input, GlobalAveragePooling2D
 import numpy as np
 import pandas as pd
 import os
+import datetime
 
 
 DATASET_PATH = "F:\\Ubuntu\\ISIC2019\\Dataset_19\\"
+MODELS_PATH = "F:\\Ubuntu\\ISIC2019\\TrainedModels\\"
 
 img_width = 718
 img_height = 542
@@ -32,29 +34,29 @@ class DataGen:
         traindf["image"] = traindf["image"].apply(append_ext)
         # testdf["id"] = testdf["id"].apply(append_ext)
         datagen = ImageDataGenerator(rescale=1. / 255., validation_split=0.25)
-        location = DATASET_PATH + "//10_Samples//train"
+        location = DATASET_PATH + "\\10_Samples\\train"
         print("Accessing images at location {}".format(location))
         self.train_generator = datagen.flow_from_dataframe(dataframe=traindf,
-                                                      directory=location,
-                                                      x_col="image",
-                                                      y_col="MEL",
-                                                      subset="training",
-                                                      batch_size=self.training_cfg.batch_size,
-                                                      seed=self.training_cfg.seed,
-                                                      shuffle=self.training_cfg.shuffle,
-                                                      class_mode="categorical",
-                                                      target_size=(img_width, img_height))
+                                                           directory=location,
+                                                           x_col="image",
+                                                           y_col="MEL",
+                                                           subset="training",
+                                                           batch_size=self.training_cfg.batch_size,
+                                                           seed=self.training_cfg.seed,
+                                                           shuffle=self.training_cfg.shuffle,
+                                                           class_mode="categorical",
+                                                           target_size=(img_width, img_height))
 
         self.valid_generator = datagen.flow_from_dataframe(dataframe=traindf,
-                                                      directory=location,
-                                                      x_col="image",
-                                                      y_col="MEL",
-                                                      subset="validation",
-                                                      batch_size=self.training_cfg.batch_size,
-                                                      seed=self.training_cfg.seed,
-                                                      shuffle=self.training_cfg.shuffle,
-                                                      class_mode="categorical",
-                                                      target_size=(img_width, img_height))
+                                                           directory=location,
+                                                           x_col="image",
+                                                           y_col="MEL",
+                                                           subset="validation",
+                                                           batch_size=self.training_cfg.batch_size,
+                                                           seed=self.training_cfg.seed,
+                                                           shuffle=self.training_cfg.shuffle,
+                                                           class_mode="categorical",
+                                                           target_size=(img_width, img_height))
 
         # test_datagen = ImageDataGenerator(rescale=1. / 255.)
         # self.test_generator = test_datagen.flow_from_dataframe(
@@ -114,6 +116,27 @@ class MTModel:
         return self.model
 
 
+def get_folder_path():
+    folder_path = MODELS_PATH + datetime.datetime.now().strftime("%B_%d")
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+    return folder_path
+
+
+def get_callbacks():
+    file_path = get_folder_path() + "\\" + datetime.datetime.now().strftime('%H_%M_%S')[:-4] \
+                + "weights.{epoch:02d}-{val_loss:.2f}.hdf5"
+    cp = ModelCheckpoint(filepath=file_path,
+                         monitor='val_loss',
+                         verbose=0,
+                         save_best_only=False,
+                         save_weights_only=False,
+                         mode='auto',
+                         period=1)
+
+    return [cp]
+
+
 class App:
     def __init__(self, mt_model, mt_training_cfg):
         self.model = mt_model.get_model()
@@ -130,10 +153,13 @@ class App:
                                  steps_per_epoch=self.datagen.train_stepsize,
                                  validation_data=self.datagen.valid_generator,
                                  validation_steps=5,
-                                 epochs=5)
+                                 epochs=self.train_cfg.nb_epochs,
+                                 workers=2,
+                                 max_queue_size=2,
+                                 use_multiprocessing=False,
+                                 callbacks=get_callbacks())
 
         print("Training Finished")
-
 
 
 if __name__ == "__main__":
