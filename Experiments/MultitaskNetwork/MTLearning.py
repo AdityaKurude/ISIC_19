@@ -32,9 +32,10 @@ class DataGen:
         traindf["image"] = traindf["image"].apply(append_ext)
         # testdf["id"] = testdf["id"].apply(append_ext)
         datagen = ImageDataGenerator(rescale=1. / 255., validation_split=0.25)
-
+        location = DATASET_PATH + "//10_Samples//train"
+        print("Accessing images at location {}".format(location))
         self.train_generator = datagen.flow_from_dataframe(dataframe=traindf,
-                                                      directory=DATASET_PATH + "/train/",
+                                                      directory=location,
                                                       x_col="image",
                                                       y_col="MEL",
                                                       subset="training",
@@ -45,7 +46,7 @@ class DataGen:
                                                       target_size=(img_width, img_height))
 
         self.valid_generator = datagen.flow_from_dataframe(dataframe=traindf,
-                                                      directory=DATASET_PATH + "/train/",
+                                                      directory=location,
                                                       x_col="image",
                                                       y_col="MEL",
                                                       subset="validation",
@@ -94,9 +95,9 @@ class MTModel:
     def build(self):
         print(" MT Model invoked")
         encoder = self.get_encoder(image_shape=img_shape)
-        decoder = self.get_decoder(encoder, output_classes=6)
+        decoder = self.get_decoder(encoder, output_classes=2)
         self.model = Model(encoder.input, decoder)
-        print(self.model.summary())
+        # print(self.model.summary())
 
     def get_encoder(self, image_shape=img_shape):
         print(" MT Model invoked")
@@ -129,7 +130,7 @@ class App:
                                  steps_per_epoch=self.datagen.train_stepsize,
                                  validation_data=self.datagen.valid_generator,
                                  validation_steps=5,
-                                 epochs=self.train_cfg.nb_epochs)
+                                 epochs=5)
 
         print("Training Finished")
 
