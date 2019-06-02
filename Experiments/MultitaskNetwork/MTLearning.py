@@ -18,6 +18,10 @@ img_height = 542
 img_shape = (img_width, img_height, 3)
 
 
+def generator_wrapper(generator):
+    for batch_x,batch_y in generator:
+        yield (batch_x,[batch_y[:, i] for i in range(2)])
+
 
 class DataGen:
     def __init__(self, training_cfg):
@@ -29,33 +33,41 @@ class DataGen:
         def append_ext(fn):
             return fn + ".jpg"
 
-        traindf = pd.read_csv(DATASET_PATH + "10_Samples_Training_GroundTruth.csv", dtype=str)
+        traindf = pd.read_csv(DATASET_PATH + "10_Samples_Training_GroundTruth_Mod.csv", dtype=str)
         # testdf = pd.read_csv("./sampleSubmission.csv", dtype=str)
         traindf["image"] = traindf["image"].apply(append_ext)
         # testdf["id"] = testdf["id"].apply(append_ext)
-        datagen = ImageDataGenerator(rescale=1. / 255., validation_split=0.25)
+        datagen = ImageDataGenerator(rescale=1. / 255., validation_split=0.3)
         location = DATASET_PATH + "\\10_Samples\\train"
         print("Accessing images at location {}".format(location))
+        column_y = ["Merged", "gender"]
+
+        if "object" in list(traindf[column_y].dtypes):
+
+            for i in range(len(list(traindf[column_y].dtypes))):
+                print(" Numeric hence converting coloumn {}".format(i))
+                traindf[column_y[i]] = pd.to_numeric(traindf[column_y[i]])
+
         self.train_generator = datagen.flow_from_dataframe(dataframe=traindf,
                                                            directory=location,
                                                            x_col="image",
-                                                           y_col="MEL",
+                                                           y_col=column_y,
                                                            subset="training",
                                                            batch_size=self.training_cfg.batch_size,
                                                            seed=self.training_cfg.seed,
                                                            shuffle=self.training_cfg.shuffle,
-                                                           class_mode="categorical",
+                                                           class_mode="other",
                                                            target_size=(img_width, img_height))
 
         self.valid_generator = datagen.flow_from_dataframe(dataframe=traindf,
                                                            directory=location,
                                                            x_col="image",
-                                                           y_col="MEL",
+                                                           y_col=column_y,
                                                            subset="validation",
                                                            batch_size=self.training_cfg.batch_size,
                                                            seed=self.training_cfg.seed,
                                                            shuffle=self.training_cfg.shuffle,
-                                                           class_mode="categorical",
+                                                           class_mode="other",
                                                            target_size=(img_width, img_height))
 
         # test_datagen = ImageDataGenerator(rescale=1. / 255.)
@@ -83,8 +95,16 @@ class TrainingCfg:
         self.nb_samples = 0
         self.seed = 0
         self.shuffle = False
-        self.metrics = {}
-        self.losses = {}
+        self.optimizer = 'adam'
+        self.metrics = {'cat_pred': 'accuracy',
+                        'gen_pred': 'accuracy'}
+
+        self.losses = {'cat_pred': 'binary_crossentropy',
+                       'gen_pred': 'binary_crossentropy'}
+
+        self.loss_weights = {'cat_pred': 1.0,
+                             'gen_pred': 1.0}
+
         self.target_img = ()
 
 
@@ -97,8 +117,9 @@ class MTModel:
     def build(self):
         print(" MT Model invoked")
         encoder = self.get_encoder(image_shape=img_shape)
-        decoder = self.get_decoder(encoder, output_classes=2)
-        self.model = Model(encoder.input, decoder)
+        cat_de = self.get_cat_decoder(encoder)
+        gen_de = self.get_gen_decoder(encoder)
+        self.model = Model(encoder.input, [cat_de, gen_de])
         # print(self.model.summary())
 
     def get_encoder(self, image_shape=img_shape):
@@ -106,9 +127,16 @@ class MTModel:
         encoder = Xception(weights='imagenet', include_top=False, input_shape=image_shape)
         return encoder
 
-    def get_decoder(self, encoder, output_classes = 6):
-        x = GlobalAveragePooling2D(name='avg_pool')(encoder.output)
-        x = Dense(output_classes, activation='softmax', name='predictions')(x)
+    def get_cat_decoder(self, encoder):
+        output_classes = 1
+        x = GlobalAveragePooling2D(name='cat_avg_pool')(encoder.output)
+        x = Dense(output_classes, activation='softmax', name='cat_pred')(x)
+        return x
+
+    def get_gen_decoder(self, encoder):
+        output_classes = 1
+        x = GlobalAveragePooling2D(name='gen_avg_pool')(encoder.output)
+        x = Dense(output_classes, activation='softmax', name='gen_pred')(x)
         return x
 
     def get_model(self):
@@ -140,21 +168,22 @@ def get_callbacks():
 class App:
     def __init__(self, mt_model, mt_training_cfg):
         self.model = mt_model.get_model()
-        self.model.compile(optimizer='adam',
-                  loss='categorical_crossentropy',  # categorical_crossentropy if multi-class classifier
-                  metrics=['accuracy'])
         self.train_cfg = mt_training_cfg
         self.datagen = DataGen(mt_training_cfg)
+        self.model.compile(optimizer=self.train_cfg.optimizer,
+                           loss=self.train_cfg.losses,
+                           metrics=self.train_cfg.metrics,
+                           loss_weights=self.train_cfg.loss_weights)
 
     def train(self):
         print("Starting training")
 
-        self.model.fit_generator(generator=self.datagen.train_generator,
+        self.model.fit_generator(generator=generator_wrapper(self.datagen.train_generator),
                                  steps_per_epoch=self.datagen.train_stepsize,
-                                 validation_data=self.datagen.valid_generator,
+                                 validation_data=generator_wrapper(self.datagen.valid_generator),
                                  validation_steps=5,
                                  epochs=self.train_cfg.nb_epochs,
-                                 workers=2,
+                                 workers=1,
                                  max_queue_size=2,
                                  use_multiprocessing=False,
                                  callbacks=get_callbacks())
