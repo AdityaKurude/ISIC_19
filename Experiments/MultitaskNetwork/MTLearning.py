@@ -25,7 +25,7 @@ class DataGen:
     def __init__(self, training_cfg):
         self.training_cfg = training_cfg
 
-        dataframe = pd.read_csv(DATASET_PATH + "10_Samples_Training_GroundTruth.csv", dtype=str)
+        dataframe = pd.read_csv(DATASET_PATH + "10_Samples_Training_GroundTruth_Mod.csv", dtype=str)
         X = dataframe.pop('image')
         X_train, X_valid, y_train, y_valid = train_test_split(X, dataframe, test_size=0.8)
 
@@ -34,13 +34,15 @@ class DataGen:
                                            y_df=y_train,
                                            batch_size=1,
                                            x_dim=(512,320,3),
-                                           y_col=["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"])
+                                           y_cat_col=["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"],
+                                          y_gen_col=["Male", "Female"])
 
         self.validation_gen = DataGenerator(Img_IDs=X_valid.values,
                                            y_df=y_valid,
                                            batch_size=1,
                                            x_dim=(512,320,3),
-                                           y_col=["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"])
+                                           y_cat_col=["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"],
+                                            y_gen_col=["Male", "Female"])
 
 
 class TrainingCfg:
@@ -53,20 +55,21 @@ class TrainingCfg:
         self.seed = 0
         self.shuffle = False
         self.optimizer = 'adam'
-        # self.metrics = {'cat_pred': 'accuracy',
-        #                 'gen_pred': 'accuracy'}
+        self.metrics = {'cat_pred': 'accuracy',
+                        'gen_pred': 'accuracy'}
+
+        self.losses = {'cat_pred': 'categorical_crossentropy',
+                       'gen_pred': 'categorical_crossentropy'}
+
+        self.loss_weights = {'cat_pred': 1.0,
+                             'gen_pred': 1.0}
+
+        # self.metrics = {'cat_pred': 'accuracy'}
         #
-        # self.losses = {'cat_pred': 'binary_crossentropy',
-        #                'gen_pred': 'binary_crossentropy'}
+        # self.losses = {'cat_pred': 'categorical_crossentropy'}
         #
-        # self.loss_weights = {'cat_pred': 1.0,
-        #                      'gen_pred': 1.0}
+        # self.loss_weights = {'cat_pred': 1.0}
 
-        self.metrics = {'cat_pred': 'accuracy'}
-
-        self.losses = {'cat_pred': 'categorical_crossentropy'}
-
-        self.loss_weights = {'cat_pred': 1.0}
         self.target_img = ()
 
 
@@ -81,8 +84,8 @@ class MTModel:
         encoder = self.get_encoder(image_shape=img_shape)
         cat_de = self.get_cat_decoder(encoder)
         gen_de = self.get_gen_decoder(encoder)
-        # self.model = Model(encoder.input, [cat_de, gen_de])
-        self.model = Model(encoder.input, [cat_de])
+        self.model = Model(encoder.input, [cat_de, gen_de])
+        # self.model = Model(encoder.input, [cat_de])
         # print(self.model.summary())
 
     def get_encoder(self, image_shape=img_shape):
@@ -97,7 +100,7 @@ class MTModel:
         return x
 
     def get_gen_decoder(self, encoder):
-        output_classes = 1
+        output_classes = 2
         x = GlobalAveragePooling2D(name='gen_avg_pool')(encoder.output)
         x = Dense(output_classes, activation='softmax', name='gen_pred')(x)
         return x
