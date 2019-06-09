@@ -9,17 +9,26 @@ IMAGE_PATH = "F:\\Ubuntu\\ISIC2019\\Dataset_19\\10_Samples\\train\\"
 
 class DataGenerator(keras.utils.Sequence):
     # 'Generates data for Keras'
-    def __init__(self, Img_IDs, y_df, batch_size=1, x_dim=(718, 542, 3), y_cat_col=[],y_gen_col=[], shuffle=False):
+    def __init__(self, Img_IDs, y_df, batch_size=1, x_dim=(718, 542, 3), y_cat_col=[], y_gen_col=[],
+                 y_anatom_col=[], y_age_col=[], shuffle=False):
         'Initialization'
         self.x_dim = x_dim
-        self.y_cat_col = y_cat_col
-        self.y_gen_col = y_gen_col
-        self.y_gen_index = []
+
+
         self.batch_size = batch_size
         self.Img_IDs = Img_IDs
         self.shuffle = shuffle
         self.dataframe = y_df
-        self.col_index = []
+
+        self.y_cat_col = y_cat_col
+        self.y_cat_index = []
+
+        self.y_gen_col = y_gen_col
+        self.y_gen_index = []
+
+        self.y_anatom_col = y_anatom_col
+        self.y_anatom_index = []
+
         self.on_epoch_end()
         self.get_column_index()
 
@@ -27,6 +36,18 @@ class DataGenerator(keras.utils.Sequence):
         col_l = list(self.dataframe.columns.values)
         print(" All columns present in the dataframe are \n {} ".format(col_l))
 
+        # Iterate for Anatomy categories
+        found_idx = 0
+        for idx, col in enumerate(col_l):
+            if len(self.y_anatom_col) == found_idx:
+                break
+            if self.y_anatom_col[found_idx] == col:
+                found_idx = found_idx + 1
+                self.y_anatom_index.append(idx)
+                print(" Found Anatom column {} at index {} ".format(col, idx))
+        # End
+
+        # Iterate for Gender
         found_idx = 0
         for idx, col in enumerate(col_l):
             if len(self.y_gen_col) == found_idx:
@@ -35,15 +56,17 @@ class DataGenerator(keras.utils.Sequence):
                 found_idx = found_idx + 1
                 self.y_gen_index.append(idx)
                 print(" Found gen column {} at index {} ".format(col, idx))
-
+        # End
+        # Iterate for Cancer categories
         found_idx = 0
         for idx, col in enumerate(col_l):
             if len(self.y_cat_col) == found_idx:
                 return
             if self.y_cat_col[found_idx] == col:
                 found_idx = found_idx + 1
-                self.col_index.append(idx)
+                self.y_cat_index.append(idx)
                 print(" Found cat column {} at index {} ".format(col, idx))
+        # End
 
     def __len__(self):
         # 'Denotes the number of batches per epoch'
@@ -58,9 +81,9 @@ class DataGenerator(keras.utils.Sequence):
         Img_IDs_temp = [self.Img_IDs[k] for k in indexes]
 
         # Generate data
-        X, y, y_gen = self.__data_generation(Img_IDs_temp, index)
-        # y_ret = (y, y_gen)
-        return X,  {'cat_pred': y, 'gen_pred': y_gen}
+        X, y, y_gen, y_anatom = self.__data_generation(Img_IDs_temp, index)
+
+        return X,  {'cat_pred': y, 'gen_pred': y_gen, 'anatom_pred': y_anatom}
 
     def on_epoch_end(self):
         # 'Updates indexes after each epoch'
@@ -74,8 +97,9 @@ class DataGenerator(keras.utils.Sequence):
         X = np.empty((self.batch_size, *self.x_dim))
         y = np.empty((self.batch_size, len(self.y_cat_col)), dtype=int)
         y_gen = np.empty((self.batch_size, len(self.y_gen_col)), dtype=int)
-        print("data generator list is {} \n".format(Img_IDs_temp))
-        #
+        y_anatom = np.empty((self.batch_size, len(self.y_anatom_col)), dtype=int)
+        # print("data generator list is {} \n".format(Img_IDs_temp))
+
         # Generate data
         for i, ID in enumerate(Img_IDs_temp):
             # Store sample Images
@@ -84,11 +108,10 @@ class DataGenerator(keras.utils.Sequence):
             res = cv2.resize(img, dsize=(self.x_dim[1], self.x_dim[0]), interpolation=cv2.INTER_NEAREST)
             X[i, ] = res
             # Store class
-            y[i, ] = self.dataframe.iloc[(index + i), self.col_index].values
-            # y = y_tmp.flatten()
+            y[i, ] = self.dataframe.iloc[(index + i), self.y_cat_index].values
             y_gen[i, ] = self.dataframe.iloc[(index + i), self.y_gen_index].values
+            y_anatom[i, ] = self.dataframe.iloc[(index + i), self.y_anatom_index].values
+            # print(" Read img {} gender {} and col values {} \n ".format(ID, y_gen[i, :], y[i, :]))
+            print(" Read img {} gender {} and anatom values {} \n ".format(ID, y_gen[i, :], y_anatom[i, :]))
 
-            print(" Read img {} gender {} and col values {} \n ".format(ID, y_gen[i, :], y[i, :]))
-
-        # print("generator returning values in shape train-val", train_subset.values.shape,y.shape)
-        return X, y, y_gen
+        return X, y, y_gen, y_anatom
