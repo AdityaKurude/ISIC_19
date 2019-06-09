@@ -5,7 +5,7 @@ import cv2
 
 
 DATASET_PATH = "F:\\Ubuntu\\ISIC2019\\Dataset_19\\"
-IMAGE_PATH = "F:\\Ubuntu\\ISIC2019\\Dataset_19\\10_Samples\\train\\"
+IMAGE_PATH = "F:\\Ubuntu\\ISIC2019\\Dataset_19\\ISIC_2019_Training_Input\\"
 
 class DataGenerator(keras.utils.Sequence):
     # 'Generates data for Keras'
@@ -114,11 +114,12 @@ class DataGenerator(keras.utils.Sequence):
         y = np.empty((self.batch_size, len(self.y_cat_col)), dtype=int)
         y_gen = np.empty((self.batch_size, len(self.y_gen_col)), dtype=int)
         y_anatom = np.empty((self.batch_size, len(self.y_anatom_col)), dtype=int)
-        y_age = np.empty((self.batch_size, len(self.y_age_col)), dtype=float)
+        y_age = np.zeros((self.batch_size, len(self.y_age_col)), dtype=float)
         # print("data generator list is {} \n".format(Img_IDs_temp))
 
         # Generate data
         for i, ID in enumerate(Img_IDs_temp):
+            # print("Image picked is {} \n".format(ID))
             # Store sample Images
             img = cv2.imread(IMAGE_PATH + ID + '.jpg')
             # TODO: check this resizing and cropping options

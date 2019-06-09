@@ -25,21 +25,27 @@ class DataGen:
     def __init__(self, training_cfg):
         self.training_cfg = training_cfg
 
-        dataframe = pd.read_csv(DATASET_PATH + "10_Samples_Training_GroundTruth_Mod.csv", dtype=str)
+        dataframe = pd.read_csv(DATASET_PATH + "ISIC_2019_Training_GroundTruth_Metadata.csv", dtype=str)
         # anatom_df = pd.get_dummies(dataframe['anatom_site_general'])
         # anatom_df.to_csv(DATASET_PATH + "Anatom", index=False)
 
         X = dataframe.pop('image')
         X_train, X_valid, y_train, y_valid = train_test_split(X, dataframe, test_size=0.8)
 
+        y_anatom = ["anterior torso", "head/neck", "lateral torso", "lower extremity",
+                        "oral/genital", "palms/soles", "posterior torso", "upper extremity"]
+
+        y_cat = ["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"]
+        y_gen = ["female", "male"]
+
         # Generators
         self.training_gen = DataGenerator(Img_IDs=X_train.values,
                                            y_df=y_train,
                                            batch_size=1,
                                            x_dim=(512,320,3),
-                                           y_cat_col=["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"],
-                                          y_gen_col=["Male", "Female"],
-                                          y_anatom_col=["anterior torso", "posterior torso", "upper extremity"],
+                                           y_cat_col=y_cat,
+                                          y_gen_col=y_gen,
+                                          y_anatom_col=y_anatom,
                                           y_age_col=['age_approx'],
                                           scale_age=10)
 
@@ -47,9 +53,9 @@ class DataGen:
                                            y_df=y_valid,
                                            batch_size=1,
                                            x_dim=(512,320,3),
-                                           y_cat_col=["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"],
-                                            y_gen_col=["Male", "Female"],
-                                          y_anatom_col=["anterior torso", "posterior torso", "upper extremity"],
+                                            y_cat_col=y_cat,
+                                            y_gen_col=y_gen,
+                                            y_anatom_col=y_anatom,
                                             y_age_col=['age_approx'],
                                             scale_age=10)
 
@@ -81,12 +87,12 @@ class TrainingCfg:
 
 class MTModel:
     def __init__(self):
-        print(" MT Model invoked")
+        # print(" MT Model invoked")
         self.model = None
         self.build()
 
     def build(self):
-        print(" MT Model invoked")
+        # print(" MT Model invoked")
         encoder = self.get_encoder(image_shape=img_shape)
         cat_de = self.get_cat_decoder(encoder)
         gen_de = self.get_gen_decoder(encoder)
@@ -98,7 +104,7 @@ class MTModel:
         # print(self.model.summary())
 
     def get_encoder(self, image_shape=img_shape):
-        print(" MT Model invoked")
+        # print(" MT Model invoked")
         encoder = Xception(weights='imagenet', include_top=False, input_shape=image_shape)
         return encoder
 
@@ -115,7 +121,7 @@ class MTModel:
         return x
 
     def get_anatom_decoder(self, encoder):
-        output_classes = 3
+        output_classes = 8
         x = GlobalAveragePooling2D(name='anatom_avg_pool')(encoder.output)
         x = Dense(output_classes, activation='softmax', name='anatom_pred')(x)
         return x
@@ -123,6 +129,7 @@ class MTModel:
     def get_age_decoder(self, encoder):
         output_classes = 1
         x = GlobalAveragePooling2D(name='age_avg_pool')(encoder.output)
+        x = Dense(output_classes*10, name='age_pre_pred')(x)
         x = Dense(output_classes, name='age_pred')(x)
         return x
 
