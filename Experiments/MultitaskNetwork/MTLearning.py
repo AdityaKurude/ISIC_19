@@ -1,7 +1,7 @@
 from keras.applications.xception import Xception
 from keras.layers.core import Dense
 from keras.models import Model
-from keras.callbacks import ModelCheckpoint
+from keras.callbacks import ModelCheckpoint, TensorBoard
 from keras.layers import Input, GlobalAveragePooling2D
 from CUtils.MT_DataGenerator import DataGenerator
 from sklearn.model_selection import train_test_split
@@ -39,7 +39,9 @@ class DataGen:
                                            x_dim=(512,320,3),
                                            y_cat_col=["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"],
                                           y_gen_col=["Male", "Female"],
-                                          y_anatom_col=["anterior torso", "posterior torso", "upper extremity"])
+                                          y_anatom_col=["anterior torso", "posterior torso", "upper extremity"],
+                                          y_age_col=['age_approx'],
+                                          scale_age=10)
 
         self.validation_gen = DataGenerator(Img_IDs=X_valid.values,
                                            y_df=y_valid,
@@ -47,7 +49,9 @@ class DataGen:
                                            x_dim=(512,320,3),
                                            y_cat_col=["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"],
                                             y_gen_col=["Male", "Female"],
-                                          y_anatom_col=["anterior torso", "posterior torso", "upper extremity"])
+                                          y_anatom_col=["anterior torso", "posterior torso", "upper extremity"],
+                                            y_age_col=['age_approx'],
+                                            scale_age=10)
 
 
 class TrainingCfg:
@@ -62,24 +66,18 @@ class TrainingCfg:
         self.optimizer = 'adam'
         self.metrics = {'cat_pred': 'accuracy',
                         'gen_pred': 'accuracy',
-                        'anatom_pred': 'accuracy'}
+                        'anatom_pred': 'accuracy',
+                        'age_pred': ['mae', 'accuracy']}
 
         self.losses = {'cat_pred': 'categorical_crossentropy',
                        'gen_pred': 'categorical_crossentropy',
-                       'anatom_pred': 'categorical_crossentropy'}
+                       'anatom_pred': 'categorical_crossentropy',
+                       'age_pred': 'mean_squared_error'}
 
         self.loss_weights = {'cat_pred': 1.0,
                              'gen_pred': 1.0,
-                             'anatom_pred': 1.0}
-
-        # self.metrics = {'cat_pred': 'accuracy'}
-        #
-        # self.losses = {'cat_pred': 'categorical_crossentropy'}
-        #
-        # self.loss_weights = {'cat_pred': 1.0}
-
-        self.target_img = ()
-
+                             'anatom_pred': 1.0,
+                             'age_pred': 0.1}
 
 class MTModel:
     def __init__(self):
@@ -93,8 +91,9 @@ class MTModel:
         cat_de = self.get_cat_decoder(encoder)
         gen_de = self.get_gen_decoder(encoder)
         anatom_de = self.get_anatom_decoder(encoder)
+        age_de = self.get_age_decoder(encoder)
 
-        self.model = Model(encoder.input, [cat_de, gen_de, anatom_de])
+        self.model = Model(encoder.input, [cat_de, gen_de, anatom_de, age_de])
         # self.model = Model(encoder.input, [cat_de])
         # print(self.model.summary())
 
@@ -121,6 +120,12 @@ class MTModel:
         x = Dense(output_classes, activation='softmax', name='anatom_pred')(x)
         return x
 
+    def get_age_decoder(self, encoder):
+        output_classes = 1
+        x = GlobalAveragePooling2D(name='age_avg_pool')(encoder.output)
+        x = Dense(output_classes, name='age_pred')(x)
+        return x
+
     def get_model(self):
         print(" MT Model invoked")
         return self.model
@@ -139,12 +144,14 @@ def get_callbacks():
     cp = ModelCheckpoint(filepath=file_path,
                          monitor='val_loss',
                          verbose=0,
-                         save_best_only=False,
+                         save_best_only=True,
                          save_weights_only=False,
                          mode='auto',
                          period=1)
+    log_dir = get_folder_path() + "\\" + datetime.datetime.now().strftime('%H_%M_%S')[:-4]
+    tb = TensorBoard(log_dir=log_dir, histogram_freq=0, write_graph=True, write_images=True)
 
-    return [cp]
+    return [tb, cp]
 
 
 class App:
