@@ -16,8 +16,8 @@ MODELS_PATH = "F:\\Ubuntu\\ISIC2019\\TrainedModels\\"
 
 # img_width = 718
 # img_height = 542
-img_width = 512
-img_height = 320
+img_width = 300
+img_height = 300
 img_shape = (img_width, img_height, 3)
 
 
@@ -30,7 +30,7 @@ class DataGen:
         # anatom_df.to_csv(DATASET_PATH + "Anatom", index=False)
 
         X = dataframe.pop('image')
-        X_train, X_valid, y_train, y_valid = train_test_split(X, dataframe, test_size=0.8)
+        X_train, X_valid, y_train, y_valid = train_test_split(X, dataframe, test_size=0.5)
 
         y_anatom = ["anterior torso", "head/neck", "lateral torso", "lower extremity",
                         "oral/genital", "palms/soles", "posterior torso", "upper extremity"]
@@ -38,33 +38,34 @@ class DataGen:
         y_cat = ["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"]
         y_gen = ["female", "male"]
 
+        limit_samples = 5
         # Generators
-        self.training_gen = DataGenerator(Img_IDs=X_train.values,
+        self.training_gen = DataGenerator(Img_IDs=X_train.values[:limit_samples],
                                            y_df=y_train,
-                                           batch_size=1,
-                                           x_dim=(512,320,3),
+                                           batch_size=self.training_cfg.batch_size,
+                                           x_dim=img_shape,
                                            y_cat_col=y_cat,
                                           y_gen_col=y_gen,
                                           y_anatom_col=y_anatom,
                                           y_age_col=['age_approx'],
-                                          scale_age=10)
+                                          scale_age=50)
 
-        self.validation_gen = DataGenerator(Img_IDs=X_valid.values,
+        self.validation_gen = DataGenerator(Img_IDs=X_valid.values[:limit_samples],
                                            y_df=y_valid,
-                                           batch_size=1,
-                                           x_dim=(512,320,3),
+                                           batch_size=self.training_cfg.batch_size,
+                                           x_dim=img_shape,
                                             y_cat_col=y_cat,
                                             y_gen_col=y_gen,
                                             y_anatom_col=y_anatom,
                                             y_age_col=['age_approx'],
-                                            scale_age=10)
+                                            scale_age=50)
 
 
 class TrainingCfg:
     def __init__(self):
         print(" Training config invoked")
-        self.batch_size = 2
-        self.nb_epochs = 10
+        self.batch_size = 1
+        self.nb_epochs = 2
         self.lr = 0.001
         self.nb_samples = 0
         self.seed = 0
@@ -81,8 +82,8 @@ class TrainingCfg:
                        'age_pred': 'mean_squared_error'}
 
         self.loss_weights = {'cat_pred': 1.0,
-                             'gen_pred': 1.0,
-                             'anatom_pred': 1.0,
+                             'gen_pred': 0.8,
+                             'anatom_pred': 0.5,
                              'age_pred': 0.1}
 
 class MTModel:
@@ -138,16 +139,11 @@ class MTModel:
         return self.model
 
 
-def get_folder_path():
-    folder_path = MODELS_PATH + datetime.datetime.now().strftime("%B_%d")
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
-    return folder_path
 
 
-def get_callbacks():
-    file_path = get_folder_path() + "\\" + datetime.datetime.now().strftime('%H_%M_%S')[:-4] \
-                + "weights.{epoch:02d}-{val_loss:.2f}.hdf5"
+
+def get_callbacks(app):
+    file_path = app.models_path + "weights.E{epoch:02d}-VL{val_loss:.2f}.hdf5"
     cp = ModelCheckpoint(filepath=file_path,
                          monitor='val_loss',
                          verbose=0,
@@ -155,7 +151,7 @@ def get_callbacks():
                          save_weights_only=False,
                          mode='auto',
                          period=1)
-    log_dir = get_folder_path() + "\\" + datetime.datetime.now().strftime('%H_%M_%S')[:-4]
+    log_dir = app.models_path + "TF_logs"
     tb = TensorBoard(log_dir=log_dir, histogram_freq=0, write_graph=True, write_images=True)
 
     return [tb, cp]
@@ -166,10 +162,17 @@ class App:
         self.model = mt_model.get_model()
         self.train_cfg = mt_training_cfg
         self.datagen = DataGen(mt_training_cfg)
+        self.models_path = self.get_folder_path()
         self.model.compile(optimizer=self.train_cfg.optimizer,
                            loss=self.train_cfg.losses,
                            metrics=self.train_cfg.metrics,
                            loss_weights=self.train_cfg.loss_weights)
+
+    def get_folder_path(self):
+        folder_path = MODELS_PATH + datetime.datetime.now().strftime("%B_%d_%H_%M_%S")
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+        return folder_path + "\\"
 
     def train(self):
         print("Starting training")
@@ -180,7 +183,7 @@ class App:
                                  workers=1,
                                  max_queue_size=2,
                                  use_multiprocessing=False,
-                                 callbacks=get_callbacks())
+                                 callbacks=get_callbacks(self))
 
         print("Training Finished")
 
