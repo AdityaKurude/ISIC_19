@@ -45,32 +45,47 @@ y_test = keras.utils.to_categorical(y_test, num_classes)
 
 
 
-inputs = Input(shape=input_shape)
-x = Conv2D(32, kernel_size=(3, 3),
-                 activation='relu',
-                 input_shape=input_shape)(inputs)
-x = Conv2D(64, (3, 3), activation='relu')(x)
-x = MaxPooling2D(pool_size=(2, 2))(x)
-
-x = Dropout(0.25)(x)
-x = Flatten()(x)
-x = Dense(128, activation='relu')(x)
-x = Dropout(0.5)(x)
-predictions = Dense(num_classes, activation='softmax')(x)
-
-model = Model(inputs=inputs, outputs=predictions)
-
-
-
-
-
-
 # inputs = Input(shape=input_shape)
 # x = Conv2D(32, kernel_size=(3, 3),
 #                  activation='relu',
 #                  input_shape=input_shape)(inputs)
 # x = Conv2D(64, (3, 3), activation='relu')(x)
-# pool_out = MaxPooling2D(pool_size=(2, 2))(x)
+# x = MaxPooling2D(pool_size=(2, 2))(x)
+#
+# x = Dropout(0.25)(x)
+# x = Flatten()(x)
+# x = Dense(128, activation='relu')(x)
+# x = Dropout(0.5)(x)
+# predictions = Dense(num_classes, activation='softmax')(x)
+#
+# model = Model(inputs=inputs, outputs=predictions)
+
+def get_multi_sample_droupout(droupout_list, pool_out, num_classes, activation):
+    out = []
+    for i, drop_rate in enumerate(droupout_list):
+        drop = Dropout(drop_rate)(pool_out)
+        shared_flat = Flatten()
+        fc1 = shared_flat(drop)
+        shared_fc2 = Dense(128, activation='relu')
+        fc2 = shared_fc2(fc1)
+        shared_fc3 = Dense(num_classes, activation=activation)
+        fc3 = shared_fc3(fc2)
+        out.append(fc3)
+    return out
+
+
+inputs = Input(shape=input_shape)
+x = Conv2D(32, kernel_size=(3, 3),
+                 activation='relu',
+                 input_shape=input_shape)(inputs)
+x = Conv2D(64, (3, 3), activation='relu')(x)
+pool_out = MaxPooling2D(pool_size=(2, 2))(x)
+
+out = get_multi_sample_droupout([0.1,0.2,0.35,0.40,0.45,0.25,0.15,0.5], pool_out, num_classes,'softmax')
+
+
+
+
 # drop1 = Dropout(0.1)(pool_out)
 # drop2 = Dropout(0.2)(pool_out)
 # drop3 = Dropout(0.35)(pool_out)
@@ -112,10 +127,12 @@ model = Model(inputs=inputs, outputs=predictions)
 # fc82 = shared_fc3(fc21)
 #
 # out = Average()([fc12, fc22, fc32, fc42, fc52, fc62, fc72, fc82])
-#
-# # This creates a model that includes
-# # the Input layer and three Dense layers
-# model = Model(inputs=inputs, outputs=out)
+
+out = Average()(out)
+
+# This creates a model that includes
+# the Input layer and three Dense layers
+model = Model(inputs=inputs, outputs=out)
 
 
 
@@ -142,7 +159,7 @@ def get_flops(model):
 
 print(" FLOPS of the model \n ")
 print(get_flops(model))
-exit()
+# exit()
 
 
 model.fit(x_train, y_train,
