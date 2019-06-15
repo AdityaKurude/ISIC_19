@@ -1,8 +1,8 @@
 from efficientnet import EfficientNetB3
-from keras.layers.core import Dense
+from keras.layers.core import Dense, Dropout
 from keras.models import Model
 from keras.callbacks import ModelCheckpoint, TensorBoard
-from keras.layers import Input, GlobalAveragePooling2D
+from keras.layers import Input, GlobalAveragePooling2D, Average
 from CUtils.MT_DataGenerator import DataGenerator
 from sklearn.model_selection import train_test_split
 import numpy as np
@@ -30,14 +30,14 @@ class DataGen:
         # anatom_df.to_csv(DATASET_PATH + "Anatom", index=False)
 
         X = dataframe.pop('image')
-        X_train, X_valid, y_train, y_valid = train_test_split(X, dataframe, test_size=0.5)
+        X_train, X_valid, y_train, y_valid = train_test_split(X, dataframe, test_size=0.3)
 
         y_anatom = ["anterior torso", "head/neck", "lateral torso", "lower extremity",
                         "oral/genital", "palms/soles", "posterior torso", "upper extremity"]
 
-        y_cat = ["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"]
+        y_cat = ["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC", "UNK"]
         y_gen = ["female", "male"]
-
+        y_age = ['age_approx']
         limit_samples = 5
         # Generators
         self.training_gen = DataGenerator(Img_IDs=X_train.values[:limit_samples],
@@ -47,8 +47,8 @@ class DataGen:
                                            y_cat_col=y_cat,
                                           y_gen_col=y_gen,
                                           y_anatom_col=y_anatom,
-                                          y_age_col=['age_approx'],
-                                          scale_age=50)
+                                          y_age_col=y_age,
+                                          scale_age=100)
 
         self.validation_gen = DataGenerator(Img_IDs=X_valid.values[:limit_samples],
                                            y_df=y_valid,
@@ -57,8 +57,9 @@ class DataGen:
                                             y_cat_col=y_cat,
                                             y_gen_col=y_gen,
                                             y_anatom_col=y_anatom,
-                                            y_age_col=['age_approx'],
-                                            scale_age=50)
+                                            y_age_col=y_age,
+                                            scale_age=100,
+                                            shuffle=self.training_cfg.shuffle)
 
 
 class TrainingCfg:
@@ -69,7 +70,8 @@ class TrainingCfg:
         self.lr = 0.001
         self.nb_samples = 0
         self.seed = 0
-        self.shuffle = False
+        self.shuffle = True
+        self.droupout_list = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
         self.optimizer = 'adam'
         self.metrics = {'cat_pred': 'accuracy',
                         'gen_pred': 'accuracy',
@@ -82,14 +84,15 @@ class TrainingCfg:
                        'age_pred': 'mean_squared_error'}
 
         self.loss_weights = {'cat_pred': 1.0,
-                             'gen_pred': 0.8,
+                             'gen_pred': 1.0,
                              'anatom_pred': 0.5,
-                             'age_pred': 0.1}
+                             'age_pred': 0.9}
 
 class MTModel:
-    def __init__(self):
+    def __init__(self, training_cfg):
         # print(" MT Model invoked")
         self.model = None
+        self.training_cfg = training_cfg
         self.build()
 
     def build(self):
@@ -109,36 +112,54 @@ class MTModel:
         encoder = EfficientNetB3(weights='imagenet', include_top=False, input_shape=image_shape)
         return encoder
 
+    def get_multi_sample_droupout(self, pool_out, num_classes, activation, layer_name):
+        out = []
+        for i, drop_rate in enumerate(self.training_cfg.droupout_list):
+            drop = Dropout(drop_rate)(pool_out)
+            shared_fc1 = Dense(num_classes*100, activation='relu')
+            fc1 = shared_fc1(drop)
+            shared_fc2 = Dense(num_classes*100, activation='relu')
+            fc2 = shared_fc2(fc1)
+            shared_fc3 = Dense(num_classes*100, activation='relu')
+            fc3 = shared_fc2(fc2)
+            if '' == activation:
+                shared_fc4 = Dense(num_classes, name=layer_name + str(i))
+            else:
+                shared_fc4 = Dense(num_classes, activation=activation, name=layer_name+str(i))
+            fc4 = shared_fc4(fc3)
+            out.append(fc4)
+        return out
+
     def get_cat_decoder(self, encoder):
-        output_classes = 8
-        x = GlobalAveragePooling2D(name='cat_avg_pool')(encoder.output)
-        x = Dense(output_classes*10, name='age_pre_pred')(x)
-        x = Dense(output_classes, activation='softmax', name='cat_pred')(x)
+        output_classes = 9
+        pool_out = GlobalAveragePooling2D(name='cat_avg_pool')(encoder.output)
+        x = self.get_multi_sample_droupout(pool_out, output_classes, 'softmax', 'cat_pred')
+        x = Average(name="cat_pred")(x)
         return x
 
     def get_gen_decoder(self, encoder):
         output_classes = 2
-        x = GlobalAveragePooling2D(name='gen_avg_pool')(encoder.output)
-        x = Dense(output_classes*10, name='age_pre_pred')(x)
-        x = Dense(output_classes, activation='softmax', name='gen_pred')(x)
+        pool_out = GlobalAveragePooling2D(name='gen_avg_pool')(encoder.output)
+        x = self.get_multi_sample_droupout(pool_out, output_classes, 'softmax', 'gen_pred')
+        x = Average(name="gen_pred")(x)
         return x
 
     def get_anatom_decoder(self, encoder):
         output_classes = 8
-        x = GlobalAveragePooling2D(name='anatom_avg_pool')(encoder.output)
-        x = Dense(output_classes*10, name='age_pre_pred')(x)
-        x = Dense(output_classes, activation='softmax', name='anatom_pred')(x)
+        pool_out = GlobalAveragePooling2D(name='anatom_avg_pool')(encoder.output)
+        x = self.get_multi_sample_droupout(pool_out, output_classes, 'softmax', 'anatom_pred')
+        x = Average(name="anatom_pred")(x)
         return x
 
     def get_age_decoder(self, encoder):
         output_classes = 1
-        x = GlobalAveragePooling2D(name='age_avg_pool')(encoder.output)
-        x = Dense(output_classes*10, name='age_pre_pred')(x)
-        x = Dense(output_classes, name='age_pred')(x)
+        pool_out = GlobalAveragePooling2D(name='age_avg_pool')(encoder.output)
+        x = self.get_multi_sample_droupout(pool_out, output_classes, '', 'age_pred')
+        x = Average(name="age_pred")(x)
         return x
 
     def get_model(self):
-        print(" MT Model invoked")
+        print(" Get Model invoked")
         return self.model
 
 
@@ -189,8 +210,8 @@ class App:
 
 
 if __name__ == "__main__":
-    model = MTModel()
-    training_cfg = TrainingCfg()
 
+    training_cfg = TrainingCfg()
+    model = MTModel(training_cfg)
     mt_app = App(model, training_cfg)
     mt_app.train()
