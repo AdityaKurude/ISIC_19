@@ -102,7 +102,7 @@ class MTModel:
 
         self.model = Model(encoder.input, [cat_de, gen_de, anatom_de, age_de])
         # self.model = Model(encoder.input, [cat_de])
-        # print(self.model.summary())
+        print(self.model.summary())
 
     def get_encoder(self, image_shape=img_shape):
         # print(" MT Model invoked")
@@ -112,18 +112,21 @@ class MTModel:
     def get_cat_decoder(self, encoder):
         output_classes = 8
         x = GlobalAveragePooling2D(name='cat_avg_pool')(encoder.output)
+        x = Dense(output_classes*10, name='age_pre_pred')(x)
         x = Dense(output_classes, activation='softmax', name='cat_pred')(x)
         return x
 
     def get_gen_decoder(self, encoder):
         output_classes = 2
         x = GlobalAveragePooling2D(name='gen_avg_pool')(encoder.output)
+        x = Dense(output_classes*10, name='age_pre_pred')(x)
         x = Dense(output_classes, activation='softmax', name='gen_pred')(x)
         return x
 
     def get_anatom_decoder(self, encoder):
         output_classes = 8
         x = GlobalAveragePooling2D(name='anatom_avg_pool')(encoder.output)
+        x = Dense(output_classes*10, name='age_pre_pred')(x)
         x = Dense(output_classes, activation='softmax', name='anatom_pred')(x)
         return x
 
@@ -137,9 +140,6 @@ class MTModel:
     def get_model(self):
         print(" MT Model invoked")
         return self.model
-
-
-
 
 
 def get_callbacks(app):
