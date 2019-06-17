@@ -16,15 +16,14 @@ import datetime
 # DATASET_PATH = "F:\\Ubuntu\\ISIC2019\\Dataset_19\\"
 LAST_YR = "F:\\Ubuntu\\ISIC2018\\ISIC2018_Task3_Training_GroundTruth\\ISIC2018_Task3_Training_GroundTruth.csv"
 
-
-MODELS_PATH = "F:\\Ubuntu\\ISIC2019\\TrainedModels\\"
+MODELS_PATH = "F:\\Ubuntu\\ISIC2018\\TrainedModels\\"
 
 # img_width = 718
 # img_height = 542
 # img_width = 512
 # img_height = 360
-img_width = 224
-img_height = 224
+img_width = 300
+img_height = 300
 
 img_shape = (img_width, img_height, 3)
 
@@ -56,7 +55,6 @@ class DataGen:
         y_train = dataframe[0:train_upto]
         y_valid = dataframe[train_upto:valid_upto]
 
-
         # self.y_anatom = ["anterior torso", "head/neck", "lateral torso", "lower extremity",
         #                 "oral/genital", "palms/soles", "posterior torso", "upper extremity"]
         self.y_anatom = None
@@ -64,8 +62,8 @@ class DataGen:
         self.y_age = None
 
         self.y_cat = ["MEL", "NV", "BCC", "AKIEC", "BKL", "DF", "VASC"]
-        # self.y_gen = ["female", "male"]
-        # self.y_age = ['age_approx']
+        self.y_fine_cat = ["BCC", "AKIEC", "DF", "VASC"]
+        self.y_coarse_cat = ['MEL', 'NV', 'BKL']
         limit_samples = None
         # Generators
         self.training_gen = DataGenerator(Img_IDs=X_train.values,
@@ -73,8 +71,8 @@ class DataGen:
                                           batch_size=self.training_cfg.batch_size,
                                           x_dim=img_shape,
                                           y_cat_col=self.y_cat,
-                                          y_gen_col=self.y_gen,
-                                          y_anatom_col=self.y_anatom,
+                                          y_fine_cat_col=self.y_fine_cat,
+                                          y_coarse_cat_col=self.y_coarse_cat,
                                           y_age_col=self.y_age,
                                           scale_age=100)
 
@@ -83,8 +81,8 @@ class DataGen:
                                             batch_size=self.training_cfg.batch_size,
                                             x_dim=img_shape,
                                             y_cat_col=self.y_cat,
-                                            y_gen_col=self.y_gen,
-                                            y_anatom_col=self.y_anatom,
+                                            y_fine_cat_col=self.y_fine_cat,
+                                            y_coarse_cat_col=self.y_coarse_cat,
                                             y_age_col=self.y_age,
                                             scale_age=100,
                                             shuffle=self.training_cfg.shuffle)
@@ -99,14 +97,22 @@ class TrainingCfg:
         self.nb_samples = 0
         self.seed = 0
         self.shuffle = True
-        self.droupout_list = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.45, 0.5]
+        # self.droupout_list = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.45, 0.5]
+        self.droupout_list = [0.45, 0.5, 0.45, 0.5]
+
         # self.droupout_list = [0.45, 0.5]
         self.optimizer = Adam(lr=self.lr)
-        self.metrics = {'cat_pred': ["categorical_accuracy"]}
+        self.metrics = {'cat_pred': ["categorical_accuracy"],
+                        "fine_cat_pred": ["categorical_accuracy"],
+                        "coarse_cat_pred": ["categorical_accuracy"]}
 
-        self.losses = {'cat_pred': 'categorical_crossentropy'}
+        self.losses = {'cat_pred': 'categorical_crossentropy',
+                       "fine_cat_pred": 'categorical_crossentropy',
+                       "coarse_cat_pred": 'categorical_crossentropy'}
 
-        self.loss_weights = {'cat_pred': 1.0}
+        self.loss_weights = {'cat_pred': 1.0,
+                             'fine_cat_pred': 1.0,
+                             'coarse_cat_pred': 1.0}
 
 
 class MTModel:
@@ -121,16 +127,16 @@ class MTModel:
         encoder = self.get_encoder(image_shape=img_shape)
         cat_de = self.get_cat_decoder(encoder)
 
-        # gen_de = self.get_gen_decoder(encoder)
-        # anatom_de = self.get_anatom_decoder(encoder)
+        fine_cat_de = self.get_fine_cat_decoder(encoder)
+        coarse_cat_de = self.get_coarse_cat_decoder(encoder)
         # age_de = self.get_age_decoder(encoder)
         #
         # gen_en = self.get_gen_encoder(shape=2)
         # anatom_en = self.get_anatom_encoder(shape=8)
         # age_en = self.get_age_encoder(shape=1)
 
-        self.model = Model(encoder.input, cat_de)
-        # self.model = Model(encoder.input, [cat_de])
+        # self.model = Model(encoder.input, cat_de)
+        self.model = Model(encoder.input, [cat_de, fine_cat_de, coarse_cat_de])
         print(self.model.summary())
 
     def get_encoder(self, image_shape=img_shape):
@@ -176,18 +182,18 @@ class MTModel:
         x = Average(name="cat_pred")(x)
         return x
 
-    def get_gen_decoder(self, encoder):
-        output_classes = 2
-        pool_out = GlobalAveragePooling2D(name='gen_avg_pool')(encoder.output)
-        x = self.get_multi_sample_droupout(pool_out, output_classes, 'softmax', 'gen_pred')
-        x = Average(name="gen_pred")(x)
+    def get_coarse_cat_decoder(self, encoder):
+        output_classes = 4
+        pool_out = GlobalAveragePooling2D(name='coarse_cat_avg_pool')(encoder.output)
+        x = self.get_multi_sample_droupout(pool_out, output_classes, 'softmax', 'coarse_cat_pred')
+        x = Average(name="coarse_cat_pred")(x)
         return x
 
-    def get_anatom_decoder(self, encoder):
-        output_classes = 8
-        pool_out = GlobalAveragePooling2D(name='anatom_avg_pool')(encoder.output)
-        x = self.get_multi_sample_droupout(pool_out, output_classes, 'softmax', 'anatom_pred')
-        x = Average(name="anatom_pred")(x)
+    def get_fine_cat_decoder(self, encoder):
+        output_classes = 5
+        pool_out = GlobalAveragePooling2D(name='fine_cat_avg_pool')(encoder.output)
+        x = self.get_multi_sample_droupout(pool_out, output_classes, 'softmax', 'fine_cat_pred')
+        x = Average(name="fine_cat_pred")(x)
         return x
 
     def get_age_decoder(self, encoder):

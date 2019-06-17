@@ -15,8 +15,8 @@ class DataGenerator(keras.utils.Sequence):
     # 'Generates data for Keras'
     def __init__(self, Img_IDs, y_df, batch_size=1, x_dim=(718, 542, 3),
                  y_cat_col=[],
-                 y_gen_col=[],
-                 y_anatom_col=[],
+                 y_fine_cat_col=[],
+                 y_coarse_cat_col=[],
                  y_age_col=[],
                  scale_age=0,
                  shuffle=False):
@@ -32,11 +32,11 @@ class DataGenerator(keras.utils.Sequence):
         self.y_cat_col = y_cat_col
         self.y_cat_index = []
 
-        self.y_gen_col = y_gen_col
-        self.y_gen_index = []
+        self.y_fine_cat_col = y_fine_cat_col
+        self.y_fine_cat_index = []
 
-        self.y_anatom_col = y_anatom_col
-        self.y_anatom_index = []
+        self.y_coarse_cat_col = y_coarse_cat_col
+        self.y_coarse_cat_index = []
 
         self.y_age_col = y_age_col
         self.y_age_index = []
@@ -48,36 +48,27 @@ class DataGenerator(keras.utils.Sequence):
         col_l = list(self.dataframe.columns.values)
         print(" All columns present in the dataframe are \n {} ".format(col_l))
 
-        # # Iterate for Age categories
-        # for idx, col in enumerate(col_l):
-        #     if self.y_age_col[0] == col:
-        #         self.y_age_index.append(idx)
-        #         print(" Found Age column {} at index {} ".format(col, idx))
-        #         break
-        # # End
-        #
-        # # Iterate for Anatomy categories
-        # found_idx = 0
-        # for idx, col in enumerate(col_l):
-        #     if len(self.y_anatom_col) == found_idx:
-        #         break
-        #     if self.y_anatom_col[found_idx] == col:
-        #         found_idx = found_idx + 1
-        #         self.y_anatom_index.append(idx)
-        #         print(" Found Anatom column {} at index {} ".format(col, idx))
-        # # End
-        #
-        # # Iterate for Gender
-        # found_idx = 0
-        # for idx, col in enumerate(col_l):
-        #     if len(self.y_gen_col) == found_idx:
-        #         break
-        #     if self.y_gen_col[found_idx] == col:
-        #         found_idx = found_idx + 1
-        #         self.y_gen_index.append(idx)
-        #         print(" Found gen column {} at index {} ".format(col, idx))
-        # # End
-        # Iterate for Cancer categories
+        found_idx = 0
+        for idx, col in enumerate(col_l):
+            if len(self.y_coarse_cat_col) == found_idx:
+                break
+            if self.y_coarse_cat_col[found_idx] == col:
+                found_idx = found_idx + 1
+                self.y_coarse_cat_index.append(idx)
+                print(" Found coarse cat column {} at index {} ".format(col, idx))
+        # End
+
+        # Iterate for Fine cat categories
+        found_idx = 0
+        for idx, col in enumerate(col_l):
+            if len(self.y_fine_cat_col) == found_idx:
+                break
+            if self.y_fine_cat_col[found_idx] == col:
+                found_idx = found_idx + 1
+                self.y_fine_cat_index.append(idx)
+                print(" Found Fine Cat column {} at index {} ".format(col, idx))
+        # End
+
         found_idx = 0
         for idx, col in enumerate(col_l):
             if len(self.y_cat_col) == found_idx:
@@ -101,9 +92,9 @@ class DataGenerator(keras.utils.Sequence):
         Img_IDs_temp = [self.Img_IDs[k] for k in indexes]
 
         # Generate data
-        X, y = self.__data_generation(Img_IDs_temp, index*self.batch_size)
+        X, y, y_fine_cat, y_coarse_cat = self.__data_generation(Img_IDs_temp, index*self.batch_size)
 
-        return X,  {'cat_pred': y}
+        return X,  {'cat_pred': y, "fine_cat_pred": y_fine_cat, "coarse_cat_pred": y_coarse_cat}
 
     def on_epoch_end(self):
         # 'Updates indexes after each epoch'
@@ -116,8 +107,8 @@ class DataGenerator(keras.utils.Sequence):
         # Initialization
         X = np.empty((self.batch_size, *self.x_dim))
         y = np.empty((self.batch_size, len(self.y_cat_col)), dtype=int)
-        # y_gen = np.empty((self.batch_size, len(self.y_gen_col)), dtype=int)
-        # y_anatom = np.empty((self.batch_size, len(self.y_anatom_col)), dtype=int)
+        y_fine_cat = np.empty((self.batch_size, len(self.y_fine_cat_col) + 1), dtype=int)
+        y_coarse_cat = np.empty((self.batch_size, len(self.y_coarse_cat_col) + 1), dtype=int)
         # y_age = np.zeros((self.batch_size, len(self.y_age_col)), dtype=float)
         # print("data generator list is {} \n".format(Img_IDs_temp))
 
@@ -135,13 +126,17 @@ class DataGenerator(keras.utils.Sequence):
             # Store class
             np_arr = self.dataframe.iloc[tmp, self.y_cat_index].values
             y[i, ] = np_arr.astype(np.float)
-            # y_gen[i, ] = self.dataframe.iloc[(index + i), self.y_gen_index].values
-            # y_anatom[i, ] = self.dataframe.iloc[(index + i), self.y_anatom_index].values
-            # y_age[i, ] = self.dataframe.iloc[(index + i), self.y_age_index].values
-            # print(" Read img {} gender {} and col values {} \n ".format(ID, y_gen[i, :], y[i, :]))
-            # if not self.scale_age == 0:
-            #     y_age[i, ] = np.divide(y_age[i, ], self.scale_age)
-            # print(" Read img ID {} and values {} \n ".format(ID, np_arr))
 
-        # return X, y, y_gen, y_anatom, y_age
-        return X, y
+            np_arr = self.dataframe.iloc[(index + i), self.y_fine_cat_index].values
+            is_fine_cat = np.sum(np_arr.astype(np.float))
+
+            np_arr = self.dataframe.iloc[(index + i), self.y_fine_cat_index].values
+            y_fine_cat[i, ] = \
+                np.append( np_arr.astype(np.float), 1 - is_fine_cat)
+
+            np_arr = self.dataframe.iloc[(index + i), self.y_coarse_cat_index].values
+            y_coarse_cat[i, ] = \
+                np.append(np_arr.astype(np.float), is_fine_cat)
+            # print(" Read img {} y {} fine_cat {} coarse_cat {} \n ".format(ID, y[i, :], y_fine_cat[i, :], y_coarse_cat[i, :]))
+
+        return X, y, y_fine_cat, y_coarse_cat
