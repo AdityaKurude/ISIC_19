@@ -1,8 +1,11 @@
 from efficientnet import EfficientNetB3, EfficientNetB2, EfficientNetB0
 from keras.layers.core import Dense, Dropout
+from keras.optimizers import Adam
 from keras.models import Model
 from keras.callbacks import ModelCheckpoint, TensorBoard
 from keras.layers import Input, GlobalAveragePooling2D, Average
+from keras.metrics import categorical_accuracy, top_k_categorical_accuracy
+
 from CUtils.SI_DataGenerator import DataGenerator
 from sklearn.model_selection import train_test_split
 import numpy as np
@@ -10,14 +13,20 @@ import pandas as pd
 import os
 import datetime
 
-DATASET_PATH = "F:\\Ubuntu\\ISIC2019\\Dataset_19\\"
-MODELS_PATH = "F:\\Ubuntu\\ISIC2019\\TrainedModels\\"
+DATASET_PATH = "D:\\Resources\\Aditya\\Practice\\ISIC2019\\Dataset_19\\"
+MODELS_PATH = "D:\\Resources\\Aditya\\Practice\\ISIC2019\\TrainedModels\\"
 
 # img_width = 718
 # img_height = 542
+# img_width = 512
+# img_height = 360
 img_width = 300
 img_height = 300
+
 img_shape = (img_width, img_height, 3)
+
+# def top_2_accuracy(y_true, y_pred):
+#     return top_k_categorical_accuracy(y_true, y_pred, k=2)
 
 
 class DataGen:
@@ -37,10 +46,10 @@ class DataGen:
         self.y_gen = None
         self.y_age = None
 
-        self.y_cat = ["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC", "UNK"]
+        self.y_cat = ["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"]
         # self.y_gen = ["female", "male"]
         # self.y_age = ['age_approx']
-        limit_samples = None
+        limit_samples = 5000
         # Generators
         self.training_gen = DataGenerator(Img_IDs=X_train.values[:limit_samples],
                                            y_df=y_train,
@@ -52,7 +61,7 @@ class DataGen:
                                           y_age_col=self.y_age,
                                           scale_age=100)
 
-        self.validation_gen = DataGenerator(Img_IDs=X_valid.values[:limit_samples],
+        self.validation_gen = DataGenerator(Img_IDs=X_valid.values[:2000],
                                            y_df=y_valid,
                                            batch_size=self.training_cfg.batch_size,
                                            x_dim=img_shape,
@@ -69,13 +78,14 @@ class TrainingCfg:
         print(" Training config invoked")
         self.batch_size = 2
         self.nb_epochs = 100
-        self.lr = 0.001
+        self.lr = 0.0001
         self.nb_samples = 0
         self.seed = 0
         self.shuffle = True
-        self.droupout_list = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.35, 0.4, 0.45, 0.5]
-        self.optimizer = 'adam'
-        self.metrics = {'cat_pred': 'accuracy'}
+        self.droupout_list = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.45, 0.4]
+        # self.droupout_list = [0.45, 0.5]
+        self.optimizer = Adam(lr=self.lr)
+        self.metrics = {'cat_pred': ["categorical_accuracy"]}
 
         self.losses = {'cat_pred': 'categorical_crossentropy'}
 
@@ -124,24 +134,25 @@ class MTModel:
 
     def get_multi_sample_droupout(self, pool_out, num_classes, activation, layer_name):
         out = []
+        num_neurons = 1408
         for i, drop_rate in enumerate(self.training_cfg.droupout_list):
             drop = Dropout(drop_rate)(pool_out)
-            shared_fc1 = Dense(num_classes*100, activation='relu')
+            shared_fc1 = Dense(num_neurons, activation='relu')
             fc1 = shared_fc1(drop)
-            shared_fc2 = Dense(num_classes*100, activation='relu')
-            fc2 = shared_fc2(fc1)
-            shared_fc3 = Dense(num_classes*100, activation='relu')
-            fc3 = shared_fc3(fc2)
+            # shared_fc2 = Dense(num_neurons, activation='relu')
+            # fc2 = shared_fc2(fc1)
+            # shared_fc3 = Dense(num_classes*100, activation='relu')
+            # fc3 = shared_fc3(fc2)
             if '' == activation:
                 shared_fc4 = Dense(num_classes, name=layer_name + str(i))
             else:
                 shared_fc4 = Dense(num_classes, activation=activation, name=layer_name+str(i))
-            fc4 = shared_fc4(fc3)
+            fc4 = shared_fc4(fc1)
             out.append(fc4)
         return out
 
     def get_cat_decoder(self, encoder):
-        output_classes = 9
+        output_classes = 8
         pool_out = GlobalAveragePooling2D(name='cat_avg_pool')(encoder.output)
         x = self.get_multi_sample_droupout(pool_out, output_classes, 'softmax', 'cat_pred')
         x = Average(name="cat_pred")(x)
@@ -174,11 +185,11 @@ class MTModel:
 
 
 def get_callbacks(app):
-    file_path = app.models_path + "weights.E{epoch:02d}-VL{val_loss:.2f}.hdf5"
+    file_path = app.models_path + "weights.E{epoch:02d}-TL{loss:.2f}-TA{acc:.2f}-VA{val_acc:.2f}-VL{val_loss:.2f}.hdf5"
     cp = ModelCheckpoint(filepath=file_path,
-                         monitor='val_loss',
+                         # monitor='val_loss',
                          verbose=0,
-                         save_best_only=True,
+                         # save_best_only=True,
                          save_weights_only=False,
                          mode='auto',
                          period=1)
